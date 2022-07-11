@@ -20,7 +20,9 @@ Problémy?
 
 '''
 
-
+####################################
+# IMPORTS 
+#
 import pandas as pd 
 import datetime as dt
 from os import listdir
@@ -47,20 +49,23 @@ mingroups=1  # when doing the k table, how many groups there have to be at minim
 
 # reduction to the optimal conditions
 # R, f, g
-#redukce=np.array([-0.07877999, -0.16307175, -0.04876931])    # fit with no uncerstainties
-redukce=np.array([-0.09048021, -0.07796618, -0.03477956])   # fit with errors in Q +/- 0.5
+#Qreduction_slopes=np.array([-0.07877999, -0.16307175, -0.04876931])    # fit with no uncerstainties
+Qreduction_slopes=np.array([-0.09048021, -0.07796618, -0.03477956])   # fit with errors in Q +/- 0.5
 
 # turning on/off reductions
-redukce1=1  # reduce during the evaluation period, default=1
-redukce2=0 # reduce during the prediction period, default=0
+Qreduction_eval_switch=1  # reduce during the evaluation period, default=1
+Qreduction_predict_switch=0 # reduce during the prediction period, default=0
 
-Npruchodu=2 # how many passes; default=2
-
-################################################################################################
+Niterations=2 # how many passes; default=2
 
 # read in the database file
 
 db = pd.read_hdf('databaze.hdf','db')
+
+####################################
+# DECLARATIONS 
+#
+
 
 # declare usefull functions. Modify Numpy functions so that they return NaN in the case all the
 # elements of the tested array are NaN. Numpy returns an empty array in that case, which crashes 
@@ -78,29 +83,35 @@ def nanstd(ar):
     else:
         return np.nanstd(ar)
 
-# prepare the list of available observers:
-# pre-sort observers and chose only their unique names. Those are stored in the list "testovani"
-pozorovatele=db['Pozorovatel']
-testovani=list(pozorovatele.drop_duplicates())
-print(len(testovani))
+####################################
+# FUNCTIONAL CODE
 
-# preselection of the observers that have at least 100 observations each. Those are in the list "dlouhodobi"
+#
+# PREPARATIONS
+
+# prepare the list of available observers:
+# pre-sort observers and chose only their unique names. Those are stored in the list "observers"
+observers_with_duplicates=db['Pozorovatel']
+observers=list(observers_with_duplicates.drop_duplicates())
+print(len(observers))
+
+# preselection of the observers that have at least 100 observations each. Those are in the list "observers_long_term"
 # these are not used further by default, however they might be useful 
 
-dlouhodobi=copy.deepcopy(testovani)
-for pozorovatel in testovani:
+observers_long_term=copy.deepcopy(observers)
+for pozorovatel in observers:
     print(pozorovatel, ' ', len(db[db['Pozorovatel']==pozorovatel]))
     if len(db[db['Pozorovatel']==pozorovatel]) < 100:
-        dlouhodobi.remove(pozorovatel)
+        observers_long_term.remove(pozorovatel)
         
 # cut all observers except for those long-term with more than 100 records
-db=db[db['Pozorovatel'].apply((lambda x: x in dlouhodobi) )]
+db=db[db['Pozorovatel'].apply((lambda x: x in observers_long_term) )]
 
 
 # store the available observers (unique names) into yet another list
 
-referencni=copy.deepcopy(testovani)
-#referencni=copy.deepcopy(dlouhodobi)
+observers_considered=copy.deepcopy(observers)
+#observers_considered=copy.deepcopy(observers_long_term)
 
 # initiate the table of personal coefficients
 
@@ -114,36 +125,36 @@ table_k=pd.DataFrame({'Datum':[], 'Jmeno':[], 'k_f':[], 'k_g':[], 'Pruchod':[]})
 # 1. a reference observer
 
 # start from a named reference observer. Here, e.g., 'ZLOCH FRANTIŠEK'
-vzorny_pozorovatel='ZLOCH FRANTIŠEK'
+reference_observer='ZLOCH FRANTIŠEK'
 from sunspots import initial_reference
-predikce=initial_reference('databaze.hdf', vzorny_pozorovatel)
+target=initial_reference('databaze.hdf', reference_observer)
 
 ###
 # 2. a flat initial series
 
 # from sunspots import initial_flat
-# predikce=initial_flat('databaze.hdf', vzorny_pozorovatel)
+# target=initial_flat('databaze.hdf', reference_observer)
 
-# variable "kralik" contains the name of the initial observer. "kralik" is the equivalent of "guinea pig" in terms of a "laboratory animal"
-kralik=vzorny_pozorovatel
+# variable "initial_observer" contains the name of the initial observer. 
+initial_observer=reference_observer
 
 ###
 # 3. a plain average (arithmentic mean across the observers)
 # from sunspots import initial_mean
-# predikce=initial_mean('databaze.hdf')
-# kralik='PRUMER'
+# target=initial_mean('databaze.hdf')
+# initial_observer='AVERAGE'
 
 
 # save the initial series for the comparisons at the very end
-initial=copy.deepcopy(predikce)  # POZOR, s timto polem se dale nikde nepocita, az na konci, pro ucely porovnani puvodni a vysledne serie
+initial=copy.deepcopy(target)  # POZOR, s timto polem se dale nikde nepocita, az na konci, pro ucely porovnani puvodni a vysledne serie
 
 # starting date 
-startdat=min(predikce['Datum'])
+startdat=min(target['Datum'])
 
 # Cut the initial series only to the first W-long interval
 dat1=startdat
 dat2=startdat+W
-predikce=predikce[(predikce['Datum'] >= dat1) & (predikce['Datum'] < dat2)]
+target=target[(target['Datum'] >= dat1) & (target['Datum'] < dat2)]
 
 #######################################
 
@@ -160,25 +171,25 @@ predikce=predikce[(predikce['Datum'] >= dat1) & (predikce['Datum'] < dat2)]
 # sigma_R = sqrt{ 10^2*sigma_g^2 + sigma_f^2 }
 #
 # first copy the existing structure for consistency
-nejistota=copy.deepcopy(predikce)
+uncertainty=copy.deepcopy(target)
 # then zero it
-nejistota['g']=0
-nejistota['f']=0
-nejistota['R']=0
+uncertainty['g']=0
+uncertainty['f']=0
+uncertainty['R']=0
 # remove Q column, which is useless
-nejistota=nejistota.drop(columns=['Q'])
+uncertainty=uncertainty.drop(columns=['Q'])
 
 # import code
 # code.interact(local=locals())
 
-# cycle variable "pruchod" contains the number of full iteration
-for pruchod in range(1,Npruchodu+1):
-    #referencni=copy.deepcopy(testovani)
-    # if pruchod == 1:
-        # referencni.remove(kralik)
-    # referencni.remove(kralik)
+# cycle variable "iteration" contains the number of full iteration passed
+for iteration in range(1,Niterations+1):
+    #observers_considered=copy.deepcopy(observers)
+    # if iteration == 1:
+        # observers_considered.remove(initial_observer)
+    # observers_considered.remove(initial_observer)
     print('*********************')
-    print('Pass No. '+str(pruchod))
+    print('Pass No. '+str(iteration))
     print('Following the arrow of time...')
     while (startdat+W+dW) < max(db['Datum']):
         dat1=startdat
@@ -189,42 +200,41 @@ for pruchod in range(1,Npruchodu+1):
 
 
         # compute coefficients for the prediction
-        tablekf=pd.DataFrame(columns=[kralik], index=referencni)
-        tablekg=pd.DataFrame(columns=[kralik], index=referencni)
-        tablenf=pd.DataFrame(columns=[kralik], index=referencni)
-        tableng=pd.DataFrame(columns=[kralik], index=referencni)
-        jmeno1=kralik
+        tablekf=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        tablekg=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        tablenf=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        tableng=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        name1=initial_observer
         # subset of the initial series
-        set1=predikce[(predikce['Datum'] >= dat1) & (predikce['Datum'] < dat2)]
-        for jmeno2 in referencni:
+        set1=target[(target['Datum'] >= dat1) & (target['Datum'] < dat2)]
+        for name2 in observers_considered:
             # subset of the other used observer
-            set2=db1[(db1['Pozorovatel'] == jmeno2)]   
+            set2=db1[(db1['Pozorovatel'] == name2)]   
             # intersection of both on date  
-            temp = pd.merge(set1, set2, how='inner', on=['Datum'])  # slucujeme po poli datum
-            Q1=np.asarray(temp['Q_x'])
-            Q2=np.asarray(temp['Q_y'])
-            f1=np.asarray(temp['f_x'])
-            f2=np.asarray(temp['f_y'])
+            sets_intersection = pd.merge(set1, set2, how='inner', on=['Datum'])  # slucujeme po poli datum
+            Q1=np.asarray(sets_intersection['Q_x'])
+            Q2=np.asarray(sets_intersection['Q_y'])
+            f1=np.asarray(sets_intersection['f_x'])
+            f2=np.asarray(sets_intersection['f_y'])
             # reduction to optimal observing conditions
-            f1red=f1*(1-redukce1*redukce[1]*(5-Q1))
-            f2red=f2*(1-redukce1*redukce[1]*(5-Q2))
+            f1red=f1*(1-Qreduction_eval_switch*Qreduction_slopes[1]*(5-Q1))
+            f2red=f2*(1-Qreduction_eval_switch*Qreduction_slopes[1]*(5-Q2))
             # limiting to only observations above the thresholds
             mask = (f1 > minspots) & (f2 > minspots)
-            junk=f1red[mask]/f2red[mask]    
-            k=np.mean(junk[np.isfinite(junk)])
-            kf=k
-            tablekf[jmeno1][jmeno2]=k
-            tablenf[jmeno1][jmeno2]=len(np.isfinite(junk))
-            g1=np.asarray(temp['g_x'])
-            g2=np.asarray(temp['g_y'])
-            g1red=g1*(1-redukce1*redukce[2]*(5-Q1))
-            g2red=g2*(1-redukce1*redukce[2]*(5-Q2))
+            # conversion coefficient for f (count of sunspots)
+            ratio_=f1red[mask]/f2red[mask]    
+            tablekf[name1][name2]=np.mean(ratio_[np.isfinite(ratio_)])  # coefficient
+            tablenf[name1][name2]=len(np.isfinite(ratio_))   # number of applicable pairs (to be used in weighting)
+            g1=np.asarray(sets_intersection['g_x'])
+            g2=np.asarray(sets_intersection['g_y'])
+            g1red=g1*(1-Qreduction_eval_switch*Qreduction_slopes[2]*(5-Q1))
+            g2red=g2*(1-Qreduction_eval_switch*Qreduction_slopes[2]*(5-Q2))
             mask = (g1 > mingroups) & (g2 > mingroups)
-            junk=g1red[mask]/g2red[mask]
-            k=np.mean(junk[np.isfinite(junk)])
-            tablekg[jmeno1][jmeno2]=k
-            tableng[jmeno1][jmeno2]=len(np.isfinite(junk))
-            table_k=pd.concat([table_k, pd.DataFrame({'Datum':[startdat+W/2], 'Jmeno':[jmeno2], 'k_f':[kf], 'k_g':[k], 'Pruchod':[pruchod-0.5]})])
+            # conversion coefficient for g (count of groups)
+            ratio_=g1red[mask]/g2red[mask]
+            tablekg[name1][name2]=np.mean(ratio_[np.isfinite(ratio_)])  # coefficient
+            tableng[name1][name2]=len(np.isfinite(ratio_))  # number of applicable pairs (to be used in weighting)
+            table_k=pd.concat([table_k, pd.DataFrame({'Datum':[startdat+W/2], 'Jmeno':[name2], 'k_f':tablekf[name1][name2], 'k_g':tablekg[name1][name2], 'Pruchod':[iteration-0.5]})])
         # code.interact(local=locals())
 
         # shift beyond the evaluation interval
@@ -233,37 +243,40 @@ for pruchod in range(1,Npruchodu+1):
         # uriznout databazi jen na zvoleny casovy usek
         db2=db[(db['Datum'] >= dat1) & (db['Datum'] < dat2)]
         # find usable observers in the prediction window
-        pozorovatele=db2['Pozorovatel']
-        temp=list(pozorovatele.drop_duplicates())
-        dostupni=copy.deepcopy(temp)
-        dostupni=[jmeno for jmeno in dostupni if jmeno in referencni] # check if their observations are available
+        observers_with_duplicates=db2['Pozorovatel']
+        observers_without_duplicates=list(observers_with_duplicates.drop_duplicates())
+        available_observers_for_prediction=copy.deepcopy(observers_without_duplicates)
+        available_observers_for_prediction=[name for name in available_observers_for_prediction if name in observers_considered] # check if their observations are available
         #import code
         #code.interact(local=locals())
-        print(dostupni)    
-        if len(dostupni) == 0:
-            break
+        print(available_observers_for_prediction)    
+        if len(available_observers_for_prediction) == 0:
+            break  # there are no suitable observers, hence break this pass of the cycle
 
 
         # code.interact(local=locals())
-        for irow in range(0,len(db2)):
+        for irow in range(0,len(db2)):  # go day by day
             date=db2.iloc[irow]['Datum']
-            g=np.array(range(0,len(dostupni)))*np.nan
-            f=np.array(range(0,len(dostupni)))*np.nan
-            g_red=np.array(range(0,len(dostupni)))*np.nan
-            f_red=np.array(range(0,len(dostupni)))*np.nan
-            wg=np.array(range(0,len(dostupni)))*np.nan    
-            wf=np.array(range(0,len(dostupni)))*np.nan 
-            for iref in range(0,len(dostupni)):
-                ref=dostupni[iref]
-                if len(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['g']):
+            # first fill the expected arrays with NaNs
+            g=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            f=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            g_red=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            f_red=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            # weights
+            wg=np.array(range(0,len(available_observers_for_prediction)))*np.nan    
+            wf=np.array(range(0,len(available_observers_for_prediction)))*np.nan 
+            for iref in range(0,len(available_observers_for_prediction)):  # go observer by observer and compute individual predictions
+                reference_observer=available_observers_for_prediction[iref]
+                if len(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['g']):
                     # in the case there exists an observation, get g and f values and recompute them to the target using the g and f table
-                    g[iref]=np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['g'])*tablekg[kralik][ref]
-                    f[iref]=np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['f'])*tablekf[kralik][ref]
-                    g_red[iref]=g[iref]*(1-redukce2*redukce[2]*(5-np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['Q'])))
-                    f_red[iref]=f[iref]*(1-redukce2*redukce[1]*(5-np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['Q'])))
-                    wg[iref]=tableng[kralik][ref]
-                    wf[iref]=tablenf[kralik][ref]
-            if pruchod > 1:
+                    g[iref]=np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['g'])*tablekg[initial_observer][reference_observer]
+                    f[iref]=np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['f'])*tablekf[initial_observer][reference_observer]
+                    g_red[iref]=g[iref]*(1-Qreduction_predict_switch*Qreduction_slopes[2]*(5-np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['Q'])))
+                    f_red[iref]=f[iref]*(1-Qreduction_predict_switch*Qreduction_slopes[1]*(5-np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['Q'])))
+                    # compute the weights (number of pairs used for evaluation of the conversion coefficients)
+                    wg[iref]=tableng[initial_observer][reference_observer]
+                    wf[iref]=tablenf[initial_observer][reference_observer]
+            if iteration > 1:
                 gsave=(nansum(g_red*(wg/nansum(wg))))
                 fsave=(nansum(f_red*(wf/nansum(wf))))
                 sigma_g=nanstd(g_red)
@@ -273,15 +286,19 @@ for pruchod in range(1,Npruchodu+1):
                 fsave=(nansum(f*(wf/nansum(wf))))
                 sigma_g=nanstd(g)
                 sigma_f=nanstd(f)
+            # round-off the values    
             if np.isfinite(gsave):
                 gsave=round(gsave)
             if np.isfinite(fsave):
                 fsave=round(fsave)
+            # compute R (either finite or NaN)
             Rsave=10*gsave+fsave
+            # computer uncertainty of R (either finite or NaN)
             sigma_R=np.sqrt(10**2*sigma_g**2+sigma_f**2)
+            # store only finite R
             if np.isfinite(Rsave):
-                predikce=pd.concat([predikce, pd.DataFrame({'Datum':date, 'g':[gsave], 'f':[fsave], 'R':[Rsave], 'Q':[5]})])
-                nejistota=pd.concat([nejistota, pd.DataFrame({'Datum':date, 'g':[sigma_g], 'f':[sigma_f], 'R':[sigma_R]})])
+                target=pd.concat([target, pd.DataFrame({'Datum':date, 'g':[gsave], 'f':[fsave], 'R':[Rsave], 'Q':[5]})])
+                uncertainty=pd.concat([uncertainty, pd.DataFrame({'Datum':date, 'g':[sigma_g], 'f':[sigma_f], 'R':[sigma_R]})])
 
         startdat=startdat+dW
 
@@ -295,9 +312,9 @@ for pruchod in range(1,Npruchodu+1):
 
     #######################################
     print('Against the arrow of time...')
-    startdat=max(predikce['Datum'])
-    predikce_zpet=predikce[(predikce['Datum'] <= startdat) & (predikce['Datum'] > (startdat-W))]
-    nejistota_zpet=nejistota[(nejistota['Datum'] <= startdat) & (nejistota['Datum'] > (startdat-W))]
+    startdat=max(target['Datum'])
+    target_backwards=target[(target['Datum'] <= startdat) & (target['Datum'] > (startdat-W))]
+    uncertainty_zpet=uncertainty[(uncertainty['Datum'] <= startdat) & (uncertainty['Datum'] > (startdat-W))]
     while (startdat-W-dW) > min(db['Datum']):
         dat1=startdat-W
         print(dat1, min(db['Datum']))
@@ -307,37 +324,36 @@ for pruchod in range(1,Npruchodu+1):
 
 
         # recompute the conversion personal coefficients, the same procedure as before
-        tablekf=pd.DataFrame(columns=[kralik], index=referencni)
-        tablekg=pd.DataFrame(columns=[kralik], index=referencni)
-        tablenf=pd.DataFrame(columns=[kralik], index=referencni)
-        tableng=pd.DataFrame(columns=[kralik], index=referencni)
-        jmeno1=kralik
-        set1=predikce_zpet[(predikce_zpet['Datum'] > dat1) & (predikce_zpet['Datum'] <= dat2)]
-        for jmeno2 in referencni:
-            set2=db1[(db1['Pozorovatel'] == jmeno2)]   
-            temp = pd.merge(set1, set2, how='inner', on=['Datum'])  # slucujeme po poli datum
-            Q1=np.asarray(temp['Q_x'])
-            Q2=np.asarray(temp['Q_y'])
-            f1=np.asarray(temp['f_x'])
-            f2=np.asarray(temp['f_y'])
-            f1red=f1*(1-redukce1*redukce[1]*(5-Q1))
-            f2red=f2*(1-redukce1*redukce[1]*(5-Q2))
+        tablekf=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        tablekg=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        tablenf=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        tableng=pd.DataFrame(columns=[initial_observer], index=observers_considered)
+        name1=initial_observer
+        set1=target_backwards[(target_backwards['Datum'] > dat1) & (target_backwards['Datum'] <= dat2)]
+        for name2 in observers_considered:
+            set2=db1[(db1['Pozorovatel'] == name2)]   
+            sets_intersection = pd.merge(set1, set2, how='inner', on=['Datum'])  # slucujeme po poli datum
+            Q1=np.asarray(sets_intersection['Q_x'])
+            Q2=np.asarray(sets_intersection['Q_y'])
+            f1=np.asarray(sets_intersection['f_x'])
+            f2=np.asarray(sets_intersection['f_y'])
+            f1red=f1*(1-Qreduction_eval_switch*Qreduction_slopes[1]*(5-Q1))
+            f2red=f2*(1-Qreduction_eval_switch*Qreduction_slopes[1]*(5-Q2))
             mask = (f1 > minspots) & (f2 > minspots)
-            junk=f1red[mask]/f2red[mask]    
-            k=np.mean(junk[np.isfinite(junk)])
-            kf=k
-            tablekf[jmeno1][jmeno2]=k
-            tablenf[jmeno1][jmeno2]=len(np.isfinite(junk))
-            g1=np.asarray(temp['g_x'])
-            g2=np.asarray(temp['g_y'])
-            g1red=g1*(1-redukce1*redukce[2]*(5-Q1))
-            g2red=g2*(1-redukce1*redukce[2]*(5-Q2))
+            # conversion coefficient for f (count of sunspots)
+            ratio_=f1red[mask]/f2red[mask]    
+            tablekf[name1][name2]=np.mean(ratio_[np.isfinite(ratio_)])  # coefficient
+            tablenf[name1][name2]=len(np.isfinite(ratio_))   # number of applicable pairs (to be used in weighting)
+            g1=np.asarray(sets_intersection['g_x'])
+            g2=np.asarray(sets_intersection['g_y'])
+            g1red=g1*(1-Qreduction_eval_switch*Qreduction_slopes[2]*(5-Q1))
+            g2red=g2*(1-Qreduction_eval_switch*Qreduction_slopes[2]*(5-Q2))
             mask = (g1 > mingroups) & (g2 > mingroups)
-            junk=g1red[mask]/g2red[mask]
-            k=np.mean(junk[np.isfinite(junk)])
-            tablekg[jmeno1][jmeno2]=k
-            tableng[jmeno1][jmeno2]=len(np.isfinite(junk))
-            table_k=pd.concat([table_k, pd.DataFrame({'Datum':[startdat-W/2], 'Jmeno':[jmeno2], 'k_f':[kf], 'k_g':[k], 'Pruchod':[pruchod]})])
+            # conversion coefficient for g (count of groups)
+            ratio_=g1red[mask]/g2red[mask]
+            tablekg[name1][name2]=np.mean(ratio_[np.isfinite(ratio_)])  # coefficient
+            tableng[name1][name2]=len(np.isfinite(ratio_))  # number of applicable pairs (to be used in weighting)
+            table_k=pd.concat([table_k, pd.DataFrame({'Datum':[startdat-W/2], 'Jmeno':[name2], 'k_f':tablekf[name1][name2], 'k_g':tablekg[name1][name2], 'Pruchod':[iteration]})])
         # code.interact(local=locals())
 
         dat1=startdat-W-dW
@@ -345,31 +361,31 @@ for pruchod in range(1,Npruchodu+1):
         # uriznout databazi jen na zvoleny casovy usek
         db2=db[(db['Datum'] >= dat1) & (db['Datum'] < dat2)]
         # najit pozorovatele, kteri se daji pouzit
-        pozorovatele=db2['Pozorovatel']
-        temp=list(pozorovatele.drop_duplicates())
-        dostupni=copy.deepcopy(temp)
-        dostupni=[jmeno for jmeno in dostupni if jmeno in referencni]
+        observers_with_duplicates=db2['Pozorovatel']
+        observers_without_duplicates=list(observers_with_duplicates.drop_duplicates())
+        available_observers_for_prediction=copy.deepcopy(observers_without_duplicates)
+        available_observers_for_prediction=[name for name in available_observers_for_prediction if name in observers_considered]
 
         # code.interact(local=locals())
         for irow in range(0,len(db2)):
             date=db2.iloc[irow]['Datum']
-            g=np.array(range(0,len(dostupni)))*np.nan
-            f=np.array(range(0,len(dostupni)))*np.nan
-            g_red=np.array(range(0,len(dostupni)))*np.nan
-            f_red=np.array(range(0,len(dostupni)))*np.nan
-            wg=np.array(range(0,len(dostupni)))*np.nan    
-            wf=np.array(range(0,len(dostupni)))*np.nan 
-            for iref in range(0,len(dostupni)):
-                ref=dostupni[iref]
-                if len(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['g']):
+            g=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            f=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            g_red=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            f_red=np.array(range(0,len(available_observers_for_prediction)))*np.nan
+            wg=np.array(range(0,len(available_observers_for_prediction)))*np.nan    
+            wf=np.array(range(0,len(available_observers_for_prediction)))*np.nan 
+            for iref in range(0,len(available_observers_for_prediction)):
+                reference_observer=available_observers_for_prediction[iref]
+                if len(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['g']):
                     # pokud existuje porovnavaci udaj, tak nastav patricne hodnoty g, f a vah. Prepocitej g a f pres tabulku
-                    g[iref]=np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['g'])*tablekg[kralik][ref]
-                    f[iref]=np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['f'])*tablekf[kralik][ref]
-                    g_red[iref]=g[iref]*(1-redukce2*redukce[2]*(5-np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['Q'])))
-                    f_red[iref]=f[iref]*(1-redukce2*redukce[1]*(5-np.asarray(db2[(db2['Pozorovatel']==ref) & (db2['Datum']==date)]['Q'])))
-                    wg[iref]=tableng[kralik][ref]
-                    wf[iref]=tablenf[kralik][ref]
-            if pruchod > 1:
+                    g[iref]=np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['g'])*tablekg[initial_observer][reference_observer]
+                    f[iref]=np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['f'])*tablekf[initial_observer][reference_observer]
+                    g_red[iref]=g[iref]*(1-Qreduction_predict_switch*Qreduction_slopes[2]*(5-np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['Q'])))
+                    f_red[iref]=f[iref]*(1-Qreduction_predict_switch*Qreduction_slopes[1]*(5-np.asarray(db2[(db2['Pozorovatel']==reference_observer) & (db2['Datum']==date)]['Q'])))
+                    wg[iref]=tableng[initial_observer][reference_observer]
+                    wf[iref]=tablenf[initial_observer][reference_observer]
+            if iteration > 1:
                 gsave=(nansum(g_red*(wg/nansum(wg))))
                 fsave=(nansum(f_red*(wf/nansum(wf))))
                 sigma_g=nanstd(g_red)
@@ -386,8 +402,8 @@ for pruchod in range(1,Npruchodu+1):
             Rsave=10*gsave+fsave
             sigma_R=np.sqrt(10**2*sigma_g**2+sigma_f**2)
             if np.isfinite(Rsave):
-                predikce_zpet=pd.concat([predikce_zpet, pd.DataFrame({'Datum':date, 'g':[gsave], 'f':[fsave], 'R':[Rsave], 'Q':[5]})])
-                nejistota_zpet=pd.concat([nejistota_zpet, pd.DataFrame({'Datum':date, 'g':[sigma_g], 'f':[sigma_f], 'R':[sigma_R]})])
+                target_backwards=pd.concat([target_backwards, pd.DataFrame({'Datum':date, 'g':[gsave], 'f':[fsave], 'R':[Rsave], 'Q':[5]})])
+                uncertainty_zpet=pd.concat([uncertainty_zpet, pd.DataFrame({'Datum':date, 'g':[sigma_g], 'f':[sigma_f], 'R':[sigma_R]})])
 
         # code.interact(local=locals())
         startdat=startdat-dW
@@ -395,17 +411,17 @@ for pruchod in range(1,Npruchodu+1):
     # code.interact(local=locals())
 
     # the cycle is finished. Copy structures to go for the next cycle or for plotting/saving/etc.
-    predikce=copy.deepcopy(predikce_zpet)
-    nejistota=copy.deepcopy(nejistota_zpet)
-    startdat=min(predikce['Datum'])
+    target=copy.deepcopy(target_backwards)
+    uncertainty=copy.deepcopy(uncertainty_zpet)
+    startdat=min(target['Datum'])
 
 # store to the files
 # the series
-predikce.to_hdf('X_predikce.hdf','predikce', mode='w')
+target.to_hdf('target.hdf','target', mode='w')
 # its uncertainty
-nejistota.to_hdf('X_nejistota.hdf','nejistota', mode='w')
+uncertainty.to_hdf('uncertainty.hdf','uncertainty', mode='w')
 # conversion coefficients
-table_k.to_hdf('X_predikce_tabulky_k.hdf','table_k', mode='w')
+table_k.to_hdf('k_tables.hdf','table_k', mode='w')
 
 ####
 # 
@@ -419,7 +435,7 @@ table_k.to_hdf('X_predikce_tabulky_k.hdf','table_k', mode='w')
 # compare to WDC-SILSO
 sunspot_number = pd.read_hdf('SN.hdf','sunspot_number')
   
-final_time=pd.date_range(start=min(predikce_zpet['Datum']), end=max(predikce_zpet['Datum']), freq='1D')
+final_time=pd.date_range(start=min(target_backwards['Datum']), end=max(target_backwards['Datum']), freq='1D')
 final_R=np.empty(len(final_time))*np.nan
 final_sigmaR=np.empty(len(final_time))*np.nan
 initial_R=np.empty(len(final_time))*np.nan
@@ -434,16 +450,16 @@ Whalf=dt.timedelta(days=13)
 #loop to fix the time axis, average over 13 days both
 for iday in range(0,len(final_time)):
     datum=final_time[iday]
-    temp=predikce_zpet[(predikce_zpet['Datum'] >= (datum-Whalf)) & (predikce_zpet['Datum'] <= (datum+Whalf))]
+    temp=target_backwards[(target_backwards['Datum'] >= (datum-Whalf)) & (target_backwards['Datum'] <= (datum+Whalf))]
     final_R[iday]=np.mean(temp['R'])
-    temp=nejistota_zpet[(nejistota_zpet['Datum'] >= (datum-Whalf)) & (nejistota_zpet['Datum'] <= (datum+Whalf))]
+    temp=uncertainty_zpet[(uncertainty_zpet['Datum'] >= (datum-Whalf)) & (uncertainty_zpet['Datum'] <= (datum+Whalf))]
     final_sigmaR[iday]=np.mean(temp['R'])
     temp=initial[(initial['Datum'] >= (datum-Whalf)) & (initial['Datum'] <= (datum+Whalf))]
     initial_R[iday]=np.mean(temp['R'])
     temp=sunspot_number[(sunspot_number['Datum'] >= (datum-Whalf)) & (sunspot_number['Datum'] <= (datum+Whalf))]
     reference_R[iday]=np.mean(temp['R_i'])
     #
-    temp=table_k[(table_k['Datum']==final_time[iday]) & (table_k['Pruchod']==Npruchodu)]
+    temp=table_k[(table_k['Datum']==final_time[iday]) & (table_k['Pruchod']==Niterations)]
     if len(temp)>0:
         kf=np.asarray(temp['k_f'])
         kg=np.asarray(temp['k_g'])
@@ -455,7 +471,7 @@ for iday in range(0,len(final_time)):
         rozptyl_kg[iday]=np.std(kg)    
 
 # plot an output file, PDF with pages
-with PdfPages('X_predikce.pdf') as pdf:   # jedno PDF s vice stranami
+with PdfPages('plots.pdf') as pdf:   # jedno PDF s vice stranami
     # code.interact(local=locals())
     plt.figure()
     plt.plot(final_time, reference_R, 'r')
@@ -490,8 +506,8 @@ with PdfPages('X_predikce.pdf') as pdf:   # jedno PDF s vice stranami
     pdf.savefig()
     plt.close()
     #
-    for jmeno in referencni:
-        temp=table_k[(table_k['Jmeno']==jmeno) & (table_k['Pruchod']==Npruchodu)]
+    for jmeno in observers_considered:
+        temp=table_k[(table_k['Jmeno']==jmeno) & (table_k['Pruchod']==Niterations)]
         # temp=table_k[(table_k['Jmeno']==jmeno)]
         plt.figure()
         plt.plot(temp['Datum'], temp['k_f'], '--bo')
