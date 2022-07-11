@@ -1,6 +1,7 @@
 import datetime as dt
 
 config = {
+    # window widths
     "W": dt.timedelta(days=5000), # width of the evaluation window
     "dW": dt.timedelta(days=100),  # width of the prediction window
     # dealing with low g and low f values that are not to be considered in the calculation

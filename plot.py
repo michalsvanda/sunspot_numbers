@@ -32,24 +32,27 @@ def do_plots():
     final_sigmaR=np.empty(len(final_time))*np.nan
     initial_R=np.empty(len(final_time))*np.nan
     reference_R=np.empty(len(final_time))*np.nan
-    prumerne_kf=np.empty(len(final_time))*np.nan
-    prumerne_kg=np.empty(len(final_time))*np.nan
-    rozptyl_kf=np.empty(len(final_time))
-    rozptyl_kg=np.empty(len(final_time))
+    # scaling coefficients
+    # averages over the sampling windows
+    average_kf=np.empty(len(final_time))*np.nan
+    average_kg=np.empty(len(final_time))*np.nan
+    # deviations (spreads) over the sampling windows
+    spread_kf=np.empty(len(final_time))
+    spread_kg=np.empty(len(final_time))
 
     # use the average over 13 days
     Whalf=dt.timedelta(days=13)
 
     #loop to fix the time axis, average over 13 days both
     for iday in range(0,len(final_time)):
-        datum=final_time[iday]
-        temp=target[(target['Datum'] >= (datum-Whalf)) & (target['Datum'] <= (datum+Whalf))]
+        date=final_time[iday]
+        temp=target[(target['Datum'] >= (date-Whalf)) & (target['Datum'] <= (date+Whalf))]
         final_R[iday]=np.mean(temp['R'])
-        temp=uncertainty[(uncertainty['Datum'] >= (datum-Whalf)) & (uncertainty['Datum'] <= (datum+Whalf))]
+        temp=uncertainty[(uncertainty['Datum'] >= (date-Whalf)) & (uncertainty['Datum'] <= (date+Whalf))]
         final_sigmaR[iday]=np.mean(temp['R'])
-        temp=initial[(initial['Datum'] >= (datum-Whalf)) & (initial['Datum'] <= (datum+Whalf))]
+        temp=initial[(initial['Datum'] >= (date-Whalf)) & (initial['Datum'] <= (date+Whalf))]
         initial_R[iday]=np.mean(temp['R'])
-        temp=sunspot_number[(sunspot_number['Datum'] >= (datum-Whalf)) & (sunspot_number['Datum'] <= (datum+Whalf))]
+        temp=sunspot_number[(sunspot_number['Datum'] >= (date-Whalf)) & (sunspot_number['Datum'] <= (date+Whalf))]
         reference_R[iday]=np.mean(temp['R_i'])
         #
         temp=table_k[(table_k['Datum']==final_time[iday]) & (table_k['Pruchod']==config["Niterations"])]
@@ -58,10 +61,10 @@ def do_plots():
             kg=np.asarray(temp['k_g'])
             kf=kf[np.isfinite(kf)]
             kg=kg[np.isfinite(kg)]
-            prumerne_kf[iday]=np.nanmean(kf)
-            prumerne_kg[iday]=np.nanmean(kg)    
-            rozptyl_kf[iday]=np.std(kf)
-            rozptyl_kg[iday]=np.std(kg)    
+            average_kf[iday]=np.nanmean(kf)
+            average_kg[iday]=np.nanmean(kg)    
+            spread_kf[iday]=np.std(kf)
+            spread_kg[iday]=np.std(kg)    
 
     # plot an output file, PDF with pages
     with PdfPages('plots.pdf') as pdf:   # jedno PDF s vice stranami
@@ -113,14 +116,14 @@ def do_plots():
             plt.close()
         #
         plt.figure()
-        plt.errorbar(final_time, prumerne_kg, yerr=rozptyl_kg)
+        plt.errorbar(final_time, average_kg, yerr=spread_kg)
         plt.xlabel('Datum')
         plt.ylabel('Spread of the conversion coefficients for $g$')
         pdf.savefig()
         plt.close()
         #
         plt.figure()
-        plt.errorbar(final_time, prumerne_kf, yerr=rozptyl_kf)
+        plt.errorbar(final_time, average_kf, yerr=spread_kf)
         plt.xlabel('Datum')
         plt.ylabel('Spread of the conversion coefficients for  $f$')
         pdf.savefig()
